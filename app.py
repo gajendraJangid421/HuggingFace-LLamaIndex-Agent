@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
 from llama_index.core.agent.workflow import AgentWorkflow, ReActAgent
 from llama_index.core.utils import set_global_tokenizer
+from llama_index.core.workflow import Context
 
 # Windows can block the native tiktoken DLL. LlamaIndex creates tokenizers for
 # memory buffers automatically, so register a simple safe fallback early.
@@ -27,12 +28,30 @@ hf_token = os.getenv("HF_TOKEN")
 
 # response = llm.complete("Hello, how are you?")
 
-def add(a: int, b: int) -> int:
+# def add(a: int, b: int) -> int:
+#     """Add two numbers."""
+#     return a + b
+
+# def multiply(a: int, b: int) -> int:
+#     """Multiplies two integers and returns the resulting integer"""
+#     return a * b
+
+async def add(ctx: Context, a: int, b: int) -> int:
     """Add two numbers."""
+    # update our count
+    cur_state = await ctx.store.get("state")
+    cur_state["num_fn_calls"] += 1
+    await ctx.store.set("state", cur_state)
+
     return a + b
 
-def multiply(a: int, b: int) -> int:
-    """Multiplies two integers and returns the resulting integer"""
+async def multiply(ctx: Context, a: int, b: int) -> int:
+    """Multiply two numbers."""
+    # update our count
+    cur_state = await ctx.store.get("state")
+    cur_state["num_fn_calls"] += 1
+    await ctx.store.set("state", cur_state)
+
     return a * b
 
 llm = HuggingFaceInferenceAPI(
@@ -70,10 +89,19 @@ async def main():
     workflow = AgentWorkflow(
         agents=[multiply_agent, addition_agent],
         root_agent="multiply_agent",
+        initial_state={"num_fn_calls": 0},
+        state_prompt="Current state: {state}. User message: {msg}",
     )
 
-    response = await workflow.run(user_msg="What's 2 plus 5 and 5 times 5?")
+    # run the workflow with context
+    ctx = Context(workflow)
+    response = await workflow.run(user_msg="What's 2 plus 5 and 5 times 5?", ctx=ctx)
     print(response)
+
+    # pull out and inspect the state
+    state = await ctx.store.get("state")
+    print(state)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
